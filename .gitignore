@@ -1,0 +1,4 @@
+*.csv
+/logs
+/src/__pycache__
+apikey.txt
