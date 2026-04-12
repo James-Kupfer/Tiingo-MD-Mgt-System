@@ -113,9 +113,14 @@ def parse_date_flexible(value: str) -> datetime | None:
     if not value or not value.strip():
         return None
 
+    v = value.strip()
+    # Strip ISO 8601 time component if present (e.g. "2023-01-02T00:00:00+00:00")
+    if "T" in v:
+        v = v.split("T")[0]
+
     for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y", "%Y/%m/%d", "%m-%d-%Y", "%d-%m-%Y"):
         try:
-            return datetime.strptime(value.strip(), fmt)
+            return datetime.strptime(v, fmt)
         except (ValueError, TypeError):
             continue
 
