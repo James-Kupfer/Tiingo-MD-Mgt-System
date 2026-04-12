@@ -38,24 +38,21 @@ class RateLimiter:
 
     def acquire(self):
         """Block if necessary to respect the configured rate limit."""
-        with self.lock:
-            now = time.time()
-
-            while self.request_times and now - self.request_times[0] > 3600:
-                self.request_times.popleft()
-
-            if len(self.request_times) >= self.max_requests:
-                oldest = self.request_times[0]
-                sleep_time = 3600 - (now - oldest) + 1
-                if sleep_time > 0:
-                    logger.info("Rate limit reached, waiting %.0fs", sleep_time)
-                    time.sleep(sleep_time)
-
+        while True:
+            with self.lock:
                 now = time.time()
                 while self.request_times and now - self.request_times[0] > 3600:
                     self.request_times.popleft()
+                if len(self.request_times) < self.max_requests:
+                    self.request_times.append(now)
+                    return
+                oldest = self.request_times[0]
+                sleep_time = 3600 - (now - oldest) + 1
 
-            self.request_times.append(now)
+            # Release the lock before sleeping so other threads are not blocked.
+            if sleep_time > 0:
+                logger.info("Rate limit reached, waiting %.0fs", sleep_time)
+                time.sleep(sleep_time)
 
 
 def build_api_url(ticker, api_key, base_url, start_date=None, end_date=None):
@@ -318,47 +315,6 @@ def append_ticker_data(ticker, new_data, raw_data_dir, csv_delimiter, parse_date
     except Exception as e:
         logger.error("%s: Failed to append: %s", ticker, e)
         return False
-
-
-def _do_save(ticker, data, raw_data_dir, stats, stats_lock, success_msg, skip_msg):
-    """Helper: call save_ticker_data and update stats accordingly."""
-    result = save_ticker_data(ticker, data, raw_data_dir)
-    if result is True:
-        with stats_lock:
-            stats["successful"] += 1
-        logger.info("%s: %s", ticker, success_msg)
-    elif result is None:
-        with stats_lock:
-            stats["skipped"] += 1
-        logger.debug("%s: %s", ticker, skip_msg)
-    else:
-        with stats_lock:
-            stats["failed"] += 1
-
-
-def _download_and_save(ticker, req_kwargs, config, stats, stats_lock,
-                       rate_limiter, is_delisted=False,
-                       success_msg="Full download successful",
-                       skip_msg="No price data returned"):
-    """
-    Acquire rate-limiter, download, increment request_count, then save.
-    Returns True if data was obtained (caller may do further processing),
-    False if no data or error (stats already updated).
-    """
-    rate_limiter.acquire()
-    data = download_ticker_data(
-        ticker,
-        config["api_key"],
-        config["base_url"],
-        config["timeout"],
-        config["max_retries"],
-        config["retry_delay"],
-        req_kwargs.get("start_date"),
-        req_kwargs.get("end_date"),
-    )
-    with stats_lock:
-        stats["request_count"] += 1
-    return data
 
 
 def process_single_ticker(idx, ticker_row, config, rate_limiter, stats_lock, stats):

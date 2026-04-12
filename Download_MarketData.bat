@@ -82,14 +82,14 @@ echo ============================================================
 echo  STEP 2: Cleaning up temporary staging files...
 echo ============================================================
 
-if exist "%~dp0tiingo_tickers.zip" (
-    del /f /q "%~dp0tiingo_tickers.zip"
-    echo   Deleted tiingo_tickers.zip
+if exist "%~dp0tiingo\supported_tickers.zip" (
+    del /f /q "%~dp0tiingo\supported_tickers.zip"
+    echo   Deleted tiingo\supported_tickers.zip
 )
 
-if exist "%~dp0tiingo_tickers" (
-    rmdir /s /q "%~dp0tiingo_tickers"
-    echo   Deleted tiingo_tickers\
+if exist "%~dp0tiingo\supported_tickers" (
+    rmdir /s /q "%~dp0tiingo\supported_tickers"
+    echo   Deleted tiingo\supported_tickers\
 )
 
 echo   Cleanup complete.
