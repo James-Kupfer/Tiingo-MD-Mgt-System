@@ -2,3 +2,5 @@
 /logs
 /src/__pycache__
 apikey.txt
+dedupe_dlist.py
+*.pyc

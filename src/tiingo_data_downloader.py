@@ -32,6 +32,7 @@ try:
         CSV_DELIMITER,
         SHOW_PROGRESS,
         DISPLAY_INTERVAL,
+        TEST_TICKER_LIMIT,
     )
 except ImportError:
     print("ERROR: config.py not found in the src/ directory.")
@@ -185,6 +186,10 @@ def main() -> int:
 
         tickers = load_tickers()
         api_key = load_api_key()
+
+        if TEST_TICKER_LIMIT > 0:
+            tickers = tickers[:TEST_TICKER_LIMIT]
+            logger.info(f"TEST_TICKER_LIMIT active: processing first {len(tickers)} tickers only")
 
         if not tickers:
             logger.error("No tickers to download.")

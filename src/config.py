@@ -8,7 +8,7 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent.parent
 TIINGO_DIR = SCRIPT_DIR / "tiingo"
-RAW_DATA_DIR = Path(r"C:\Beaker\Market Data\Raw")
+RAW_DATA_DIR = Path(r"C:\documents\investments\market data\raw")
 LOG_DIR = SCRIPT_DIR / "logs"
 
 for _d in (RAW_DATA_DIR, LOG_DIR, TIINGO_DIR):
@@ -41,7 +41,7 @@ EXCLUDED_CHARS = {
 
 FORCE_DOWNLOAD_SYMBOLS = {
     "MLX", "FASMX", "FCVSX", "FSANX", "BALFX", "FFNOX",
-    "PGEOX", "PRCPX", "FBALX", "FFGCX", "PWLBX", "EAPCX",
+    "PGEOX", "PRCPX", "FBALX", "FFGCX", "PWLBX", "EAPCX", "FCVSX", "FBALX", "FIUIX", "FSDAX", "FBMPX", "FSAGX", "FPURX", "FNARX"
 }
 
 EXCLUDE_TICKERS = {
@@ -56,6 +56,8 @@ EXCLUDE_TICKERS = {
     "ZVV", "ZZK", "ZZZ", "IGZ",
     "CBO", "CBX", "IBO",
 }
+
+TEST_TICKER_LIMIT = 0  # Cap tickers processed; 0 = no limit
 
 LOG_LEVEL = "DEBUG"
 CONSOLE_LOG_LEVEL = "INFO"
