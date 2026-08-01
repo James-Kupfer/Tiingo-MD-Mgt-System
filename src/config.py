@@ -9,9 +9,11 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent.parent
 TIINGO_DIR = SCRIPT_DIR / "tiingo"
 RAW_DATA_DIR = Path(r"C:\documents\investments\market data\raw")
+CLEAN_DATA_DIR = Path(r"C:\documents\investments\market data\clean")
+WEEKLY_DATA_DIR = Path(r"C:\documents\investments\market data\clean_weekly")
 LOG_DIR = SCRIPT_DIR / "logs"
 
-for _d in (RAW_DATA_DIR, LOG_DIR, TIINGO_DIR):
+for _d in (RAW_DATA_DIR, CLEAN_DATA_DIR, WEEKLY_DATA_DIR, LOG_DIR, TIINGO_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 APIKEY_FILE = SCRIPT_DIR / "apikey.txt"
@@ -58,6 +60,13 @@ EXCLUDE_TICKERS = {
 }
 
 TEST_TICKER_LIMIT = 0  # Cap tickers processed; 0 = no limit
+
+# --- clean_prices.py ---
+# Relative variance threshold for treating same-date rows from different
+# source files (e.g. TICKER.csv vs TICKER_dlist.csv) as describing the same
+# trading day. Below this, differences (vendor rounding/snapshot noise) are
+# immaterial; above it, the date is logged to _merge_conflicts.csv.
+MERGE_VARIANCE_THRESHOLD = 0.01
 
 LOG_LEVEL = "DEBUG"
 CONSOLE_LOG_LEVEL = "INFO"
