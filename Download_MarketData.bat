@@ -33,7 +33,7 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
-
+'
 rem ------------------------------------------------------------------
 rem  Parse argument
 rem ------------------------------------------------------------------
@@ -93,6 +93,8 @@ if exist "%~dp0tiingo\supported_tickers" (
 )
 
 echo   Cleanup complete.
+
+
 
 rem ------------------------------------------------------------------
 rem  STEP 3 -- Download market data (skipped for tickers mode)

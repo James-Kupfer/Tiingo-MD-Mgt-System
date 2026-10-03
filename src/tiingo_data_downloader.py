@@ -5,10 +5,12 @@ Orchestrates parallel download of daily OHLCV price data from the Tiingo
 API for all tickers listed in Tickers_to_Update.csv.
 """
 
+import argparse
 import csv
 import logging
 import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 
 try:
     from download import download_all_tickers_parallel
@@ -86,17 +88,19 @@ def load_api_key() -> str | None:
         return None
 
 
-def load_tickers() -> list[dict]:
+def load_tickers(ticker_file: Path = TICKERS_TO_UPDATE_FILE) -> list[dict]:
     try:
-        if not TICKERS_TO_UPDATE_FILE.exists():
-            logger.error(f"Ticker file not found: {TICKERS_TO_UPDATE_FILE}")
-            logger.error("Run tiingo_ticker_manager.py first to generate this file.")
+        if not ticker_file.exists():
+            logger.error(f"Ticker file not found: {ticker_file}")
+            logger.error(
+                "Run tiingo_ticker_manager.py (or inventory_tickers.py) first to generate this file."
+            )
             return []
 
-        with open(TICKERS_TO_UPDATE_FILE, "r", encoding="utf-8") as f:
+        with open(ticker_file, "r", encoding="utf-8") as f:
             tickers = list(csv.DictReader(f))
 
-        logger.info(f"Loaded {len(tickers)} tickers from {TICKERS_TO_UPDATE_FILE}")
+        logger.info(f"Loaded {len(tickers)} tickers from {ticker_file}")
         return tickers
     except Exception as e:
         logger.error(f"Failed to load tickers: {e}", exc_info=True)
@@ -169,22 +173,29 @@ def get_max_end_date(tickers: list[dict]) -> datetime | None:
     return max_date
 
 
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Download Tiingo daily prices.")
+    parser.add_argument(
+        "mode", nargs="?", default="incremental", type=str.lower,
+        choices=("full", "incremental"),
+    )
+    parser.add_argument(
+        "--tickers", type=Path, default=TICKERS_TO_UPDATE_FILE,
+        help="Ticker CSV to download (default: Tickers_to_Update.csv)",
+    )
+    return parser.parse_args(argv)
+
+
 def main() -> int:
     try:
-        mode = "incremental"
-        if len(sys.argv) > 1:
-            arg = sys.argv[1].lower()
-            if arg in ("full", "incremental"):
-                mode = arg
-            else:
-                logger.error(f"Invalid mode: {arg}. Use 'full' or 'incremental'.")
-                return 1
+        args = parse_args(sys.argv[1:])
+        mode = args.mode
 
         logger.info("=" * 70)
         logger.info(f"TIINGO MARKET DATA DOWNLOAD - MODE: {mode.upper()}")
         logger.info("=" * 70)
 
-        tickers = load_tickers()
+        tickers = load_tickers(args.tickers)
         api_key = load_api_key()
 
         if TEST_TICKER_LIMIT > 0:

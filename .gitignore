@@ -4,3 +4,5 @@
 apikey.txt
 dedupe_dlist.py
 *.pyc
+.pytest_cache/
+.ruff_cache/
