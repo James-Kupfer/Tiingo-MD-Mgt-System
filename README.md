@@ -25,9 +25,13 @@ The pipeline has three stages:
 1. **Ticker update**
    - `src\tiingo_ticker_manager.py` downloads Tiingo's supported tickers ZIP.
    - The ticker list is extracted and filtered according to `src\config.py`.
-   - Two files are written:
+   - Three files are written:
      - `Tickers_to_Update.csv`
      - `active_list.csv`
+     - `ETFs.xlsx` (in the Price store, `ETF_LIST_FILE` in `src\config.py`): the
+       `assetType == "ETF"` rows of the filtered list, same columns as
+       `Tickers_to_Update.csv`. Consumed by the Crash Prediction project's
+       `etf_excess_return.py`.
 
 2. **Cleanup**
    - Temporary ZIP and extracted staging files under `tiingo\` are deleted.
@@ -61,7 +65,7 @@ The pipeline has three stages:
 - Tiingo account and API key
 - Internet access for Tiingo API calls
 
-No third-party Python packages are required.
+No third-party Python packages are required, except `openpyxl` for the `ETFs.xlsx` export.
 
 ## Setup
 
@@ -74,6 +78,7 @@ All user-editable settings live in `src\config.py`.
 
 Key settings include:
 
+- `ETF_LIST_FILE`: Path of the ETF list workbook written on every ticker refresh (if it cannot be written, e.g. open in Excel, an error is logged, the old file is kept and the run continues).
 - `RAW_DATA_DIR`: The destination directory path for downloaded CSV files. **Note:** Use Python raw strings (e.g., `r"C:\Path"`) or double backslashes to avoid Windows unicode escape errors.
 - `MAX_REQUESTS_PER_HOUR`: Maximum allowed API calls per hour. Note: This counter does not persist across multiple runs. It resets every time the script is executed.
 - `DOWNLOAD_TIMEOUT`: Maximum time (in seconds) to wait for an HTTP response.

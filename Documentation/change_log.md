@@ -1,5 +1,27 @@
 # Change Log
 
+## 2026-10-03 - Export the ETF list to Price\ETFs.xlsx
+
+**Type**: feature
+**Files**: src/tiingo_ticker_manager.py, src/config.py, tests/test_tiingo_ticker_manager.py, README.md
+
+The ticker step now also writes the ETF rows of the filtered ticker list to
+`Market Data\Price\ETFs.xlsx` (config.py `ETF_LIST_FILE`), so downstream
+projects (Crash Prediction's per-ETF excess return) get the ETF universe
+without re-parsing Tiingo's ZIP.
+
+- Source is the filtered list (`valid_tickers`, same filters as
+  `Tickers_to_Update.csv`), so the ETFs are exactly those this system downloads.
+  Delisted ETFs are included; their `endDate` column is kept.
+- Runs inside `process_ticker_list`, so every mode of `Download_MarketData.bat`
+  (including `tickers`) refreshes it.
+- An empty ETF set or a locked target file logs an error and keeps the old file; the
+  step and the price download continue (a red-team review flagged a fatal side export
+  as blocking the nightly update). The file is written to a temp name and swapped in.
+  Adds an `openpyxl` dependency to a project that was stdlib-only.
+
+Rejected: a separate bat step/script - would duplicate the ZIP read and filtering.
+
 ## 2026-09-19 - Added the Inventory-only update
 
 **Type**: feature

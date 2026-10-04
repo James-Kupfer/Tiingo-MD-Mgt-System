@@ -20,6 +20,9 @@ APIKEY_FILE = SCRIPT_DIR / "apikey.txt"
 SUPPORTED_TICKERS_ZIP = TIINGO_DIR / "supported_tickers.zip"
 SUPPORTED_TICKERS_DIR = TIINGO_DIR / "supported_tickers"
 TICKERS_TO_UPDATE_FILE = SCRIPT_DIR / "Tickers_to_Update.csv"
+# Absolute: the Price store lives outside this repo. Written by tiingo_ticker_manager.py
+# on every ticker refresh (assetType == "ETF" rows of the filtered ticker list).
+ETF_LIST_FILE = Path(r"C:\Documents\Investments\Market Data\Price\ETFs.xlsx")
 LOG_FILE = LOG_DIR / "tiingo_download.log"
 
 # --- inventory update (inventory_tickers.py) ---

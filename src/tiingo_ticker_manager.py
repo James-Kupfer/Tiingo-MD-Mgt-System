@@ -7,11 +7,15 @@ producing Tickers_to_Update.csv and active_list.csv.
 
 import csv
 import logging
+import os
 import shutil
 import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 from urllib.request import urlopen
 from zipfile import ZipFile
+
+from openpyxl import Workbook
 
 try:
     from config import (
@@ -20,6 +24,7 @@ try:
         SUPPORTED_TICKERS_ZIP,
         SUPPORTED_TICKERS_DIR,
         TICKERS_TO_UPDATE_FILE,
+        ETF_LIST_FILE,
         PRICE_CURRENCY,
         ASSET_TYPES,
         EXCHANGES,
@@ -123,6 +128,31 @@ def is_valid_ticker(
     if has_excluded_chars(ticker):
         return False
     return True
+
+
+def export_etf_list(rows: list[dict], path: Path) -> int:
+    """Write the ETF rows (assetType == "ETF") of the filtered ticker list to an xlsx.
+
+    Columns are the source file's columns. Returns the number of ETFs written.
+    The file is replaced atomically; raises PermissionError if the target is held open.
+    """
+    etfs = [r for r in rows if r.get("assetType", "").strip() == "ETF"]
+    if not etfs:
+        raise ValueError(
+            "No ETF rows in the filtered ticker list; refusing to write an empty ETFs file"
+        )
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "ETFs"
+    fieldnames = list(etfs[0].keys())
+    sheet.append(fieldnames)
+    for row in etfs:
+        sheet.append([row.get(name, "") for name in fieldnames])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp.xlsx")  # write beside the target, then swap in
+    book.save(tmp)
+    os.replace(tmp, path)
+    return len(etfs)
 
 
 def process_ticker_list() -> bool:
@@ -230,6 +260,13 @@ def process_ticker_list() -> bool:
             writer.writeheader()
             writer.writerows(active_tickers)
         logger.info(f"Saved active tickers to: {active_file}")
+
+        try:
+            etf_count = export_etf_list(valid_tickers, ETF_LIST_FILE)
+            logger.info(f"Saved {etf_count} ETFs to: {ETF_LIST_FILE}")
+        except (OSError, ValueError) as e:
+            # Side export: must not block the price download that follows.
+            logger.error(f"ETF list NOT updated ({ETF_LIST_FILE}): {e}")
 
         logger.info("=" * 70)
         logger.info("SUMMARY")
