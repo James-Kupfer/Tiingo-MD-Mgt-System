@@ -55,7 +55,9 @@ The pipeline has three stages:
     ├── config.py
     ├── tiingo_ticker_manager.py
     ├── tiingo_data_downloader.py
-    └── download.py
+    ├── download.py
+    ├── log_utils.py
+    └── run_csv2pq.py
 ```
 
 ## Requirements
@@ -92,6 +94,7 @@ Key settings include:
 - `FORCE_DOWNLOAD_SYMBOLS`: Specific set of ticker symbols that will always be downloaded, bypassing all exclusion filters.
 - `EXCLUDE_TICKERS`: Specific set of ticker symbols to explicitly ignore.
 - `LOG_LEVEL`: Minimum severity level for messages written to the log file (e.g., `"DEBUG"`).
+- `LOG_RETENTION_DAYS`: `.txt`/`.log` files in `logs\` older than this are deleted at the start of each `Clean_And_Convert.bat` step (default `90`).
 - `CONSOLE_LOG_LEVEL`: Minimum severity level for messages printed to the command prompt console (e.g., `"INFO"`).
 - `CSV_DELIMITER`: Character used to separate values in saved market data files (default `","`).
 - `SHOW_PROGRESS`: Boolean (`True`/`False`) toggling the console progress tracker.
@@ -213,6 +216,23 @@ logs\tiingo_download_YYYY-MM-DD_HH-MM.log
 
 The file logger captures detailed activity, while console logging can be kept
 brief by setting `CONSOLE_LOG_LEVEL = "WARNING"`.
+
+`Clean_And_Convert.bat` writes one log per step:
+
+```text
+logs\YYYY-MM-DD-HH-MM_clean_prices.txt
+logs\YYYY-MM-DD-HH-MM_csv2pq.txt
+```
+
+- `clean_prices`: run arguments, one `DEBUG` line per ticker (source files, row
+  counts, rows skipped/corrected), and every failure with the ticker, source
+  files and full traceback. A crash that stops the whole run is logged at
+  `CRITICAL` with its traceback; the last `DEBUG` lines before it name the ticker.
+- `csv2pq`: the exact command, every line csv2pq prints, and its exit code.
+  `csv2pq` is now launched through `src\run_csv2pq.py` so its output is captured.
+- When a step fails, the `.bat` prints the log directory to check.
+- Per-ticker `Failed to clean` errors do not stop the run or fail the step (the
+  batch continues, and the exit code stays 0), so search the log for `ERROR`.
 
 ## Typical usage
 
