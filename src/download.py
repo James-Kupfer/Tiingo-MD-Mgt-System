@@ -345,6 +345,79 @@ def append_ticker_data(ticker, new_data, raw_data_dir, csv_delimiter, parse_date
         return False
 
 
+ADJ_STALE_MIN_EFFECT = 1e-4  # ignore ex-dates whose adjustment moves the return less than this
+
+
+def stale_adjclose_dates(filepath, delimiter=","):
+    """Ex-dates in a stored raw file whose adjClose was never restated.
+
+    Tiingo restates adjClose for the whole history when a dividend or split
+    occurs. A file that is only ever appended to keeps the adjClose values it
+    was downloaded with, so an ex-date leaves the older rows on the previous
+    basis. On an ex-date row the adjClose return should match the
+    split/dividend-derived return; when it matches the raw close return
+    instead (and the two differ measurably), the rows before it are stale.
+
+    Returns:
+        list[str]: dates (YYYY-MM-DD as stored) of such ex-dates, oldest first.
+    """
+    stale = []
+    prev = None
+    with open(filepath, encoding="utf-8", newline="") as f:
+        for row in csv.DictReader(f, delimiter=delimiter):
+            try:
+                cur = {
+                    "date": row["date"].strip(),
+                    "close": float(row["close"]),
+                    "adj": float(row["adjClose"]),
+                    "div": float(row.get("divCash") or 0.0),
+                    "split": float(row.get("splitFactor") or 1.0) or 1.0,
+                }
+            except (KeyError, TypeError, ValueError):
+                prev = None
+                continue
+            if prev and (cur["div"] != 0.0 or cur["split"] != 1.0) and min(prev["close"], prev["adj"], cur["close"]) > 0:
+                raw = cur["close"] / prev["close"]
+                expected_prior = (prev["close"] - cur["div"]) / cur["split"]
+                if expected_prior > 0:
+                    expected = cur["close"] / expected_prior
+                    vendor = cur["adj"] / prev["adj"]
+                    if (abs(expected - raw) / raw > ADJ_STALE_MIN_EFFECT
+                            and abs(vendor - raw) < abs(vendor - expected)):
+                        stale.append(cur["date"])
+            prev = cur
+    return stale
+
+
+def redownload_if_adjclose_stale(ticker, start_date, config, rate_limiter, stats_lock, stats):
+    """After an incremental update, re-download the full history when the stored
+    adjClose is stale (see stale_adjclose_dates), so it is Tiingo's own
+    consistent series again. Returns True when a re-download was done."""
+    filepath = config["raw_data_dir"] / (ticker + ".csv")
+    stale = stale_adjclose_dates(filepath, config["csv_delimiter"])
+    if not stale:
+        return False
+    logger.info("%s: adjClose not restated at %d ex-date(s) (latest %s); re-downloading full history",
+                ticker, len(stale), stale[-1])
+    rate_limiter.acquire()
+    data = download_ticker_data(
+        ticker, config["api_key"], config["base_url"],
+        config["timeout"], config["max_retries"], config["retry_delay"],
+        start_date, config["today"],
+    )
+    with stats_lock:
+        stats["request_count"] += 1
+    if not data or save_ticker_data(ticker, data, config["raw_data_dir"]) is not True:
+        logger.error("%s: full re-download for stale adjClose failed", ticker)
+        with stats_lock:
+            stats["failed"] += 1
+        return False
+    remaining = stale_adjclose_dates(filepath, config["csv_delimiter"])
+    if remaining:
+        logger.warning("%s: adjClose still looks unrestated at %s after a full re-download", ticker, remaining[-3:])
+    return True
+
+
 def process_single_ticker(idx, ticker_row, config, rate_limiter, stats_lock, stats):
     """
     Download and persist data for one ticker within the worker pool.
@@ -517,6 +590,8 @@ def process_single_ticker(idx, ticker_row, config, rate_limiter, stats_lock, sta
                             with stats_lock:
                                 stats["successful"] += 1
                             logger.info("%s: Incremental update successful", ticker)
+                            redownload_if_adjclose_stale(
+                                ticker, start_date, config, rate_limiter, stats_lock, stats)
                         else:
                             with stats_lock:
                                 stats["failed"] += 1

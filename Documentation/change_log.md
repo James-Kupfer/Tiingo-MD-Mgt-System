@@ -1,5 +1,22 @@
 # Change Log
 
+## 2026-10-04 - Full re-download when a stored adjClose is stale
+
+**Type**: fix
+**Files**: src/download.py, tests/test_download.py
+
+Tiingo restates adjClose for the whole history at each dividend or split, but the
+raw files are only appended to, so older rows stay on the previous basis (SPY:
+adjClose == close across four ex-dates). After each incremental update,
+`stale_adjclose_dates` checks every ex-date row: if its adjClose return matches the
+raw close return rather than the split/dividend-derived one (and they differ by
+more than 1e-4), the file is stale and `redownload_if_adjclose_stale` replaces it
+with the full history (one request). The vendor's adjClose stays the single source
+of truth; the cleaner is unchanged (an interim cleaner change was reverted).
+On 2026-10-04, 75 of 205 Inventory files were stale, so the first inventory run
+re-downloads those; the first full run does the same across the universe.
+Removes the "found, not fixed" note below.
+
 ## 2026-10-04 - Hedge-signal symbols always downloaded
 
 **Type**: feature
@@ -9,7 +26,7 @@
 `Tickers_Inventory.csv`: the Investments hedge signal's trigger symbols and
 sleeve now price off this store (Clean_Inventory). RSP was not in it before.
 
-Found, not fixed (needs a decision): `clean_prices.clean_symbol_rows` keeps the
+Found here, fixed in the entry above: `clean_prices.clean_symbol_rows` keeps the
 vendor's adjClose return on a dividend day when it is within `DEFAULT_TOLERANCE`
 (1%) of the dividend-derived one. Rows appended incrementally carry an
 unadjusted vendor adjClose, so every dividend under 1% of price since the raw
