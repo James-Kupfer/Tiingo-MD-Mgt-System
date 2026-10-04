@@ -1,5 +1,43 @@
 # Change Log
 
+## 2026-10-04 - Portfolio symbols, ticker-subset clean, refetch of revised bars
+
+**Type**: feature
+**Files**: src/inventory_tickers.py, src/clean_prices.py, src/download.py,
+src/tiingo_data_downloader.py, src/config.py, Download_MarketData.bat,
+tests/test_inventory_tickers.py, tests/test_clean_prices.py (new),
+tests/test_download.py (new), README.md
+
+Supports `Systems\Market Data Pipeline` (replaces `Systems\run_inventory_update.bat`
+and `Run_Update_Pipeline.bat`): a 16:20 run on Tiingo's preliminary bar for the
+Inventory/Portfolio symbols only, and an 18:00 full run that must replace those
+preliminary bars.
+
+- `inventory_tickers.py` adds the Portfolio sheet's underlyings (option and
+  warrant legs resolve to their stock, via Inventory where a row exists). On
+  2026-10-04 this adds no symbol Inventory lacks; it guards a position opened
+  before its Inventory row exists. A workbook without a Portfolio sheet now
+  fails the step (ValueError, retried like any unreadable workbook).
+- `clean_prices.py --tickers FILE` cleans only the listed base tickers, so the
+  inventory run takes about a minute instead of the full ~25 min clean.
+- `tiingo_data_downloader.py --refetch-days N` (forwarded by
+  `Download_MarketData.bat`) re-requests the last N days even for a current
+  ticker; `append_ticker_data(replace_existing=True)` replaces stored rows whose
+  values changed, rewriting the file in place only when one did. Previously a
+  ticker whose latest stored date was today was skipped, so a preliminary bar
+  stored at 16:20 was permanent. The rewrite is not atomic; a crash mid-write
+  leaves a file whose dates can't be read, which the next incremental run
+  already handles by re-downloading full history. A temp file was rejected to
+  keep anything but price files out of `Raw`.
+- Removed a stray `'` line in `Download_MarketData.bat` (cmd printed an error
+  and carried on).
+- Review fixes: on a refetch, a header mismatch now leaves the file untouched
+  and fails the ticker (the pre-existing branch would have rewritten the file
+  from only the refetch window, cutting history to a few days); the replace
+  rewrite writes LF like the append path; an option leg is dropped when its
+  underlying is excluded, but a multi-token listing is no longer excluded by
+  its first token alone.
+
 ## 2026-10-03 - Export the ETF list to Price\ETFs.xlsx
 
 **Type**: feature

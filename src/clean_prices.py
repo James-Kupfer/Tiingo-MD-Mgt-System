@@ -529,12 +529,30 @@ def merge_symbol_files(
     return merged_rows, conflicts
 
 
+def load_ticker_filter(path: Path) -> set[str]:
+    """Read the upper-cased ``ticker`` column of a Tickers_*.csv file.
+
+    Raises:
+        FileNotFoundError: ``path`` does not exist.
+        ValueError: The file has no ``ticker`` column or lists no tickers.
+    """
+    with path.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        if "ticker" not in (reader.fieldnames or []):
+            raise ValueError(f"{path} has no 'ticker' column")
+        tickers = {r["ticker"].strip().upper() for r in reader if r["ticker"].strip()}
+    if not tickers:
+        raise ValueError(f"{path} lists no tickers")
+    return tickers
+
+
 def clean_directory(
     input_dir: Path,
     output_dir: Path,
     pattern: str = "*.csv",
     tolerance: float = DEFAULT_TOLERANCE,
     merge_tolerance: float = DEFAULT_MERGE_TOLERANCE,
+    tickers: set[str] | None = None,
 ) -> None:
     """Clean every CSV in input_dir matching pattern, writing up to two
     output files per ticker: ``{TICKER}.csv`` (live data, symbol=TICKER) and
@@ -564,9 +582,20 @@ def clean_directory(
     ``_merge_conflicts.csv`` (same-date disagreements within a confirmed
     component), ``_disjoint_series_excluded.csv``, and
     ``_invalid_dlist_removed.csv`` into output_dir.
+
+    ``tickers``, when given, restricts the run to those base tickers (see
+    load_ticker_filter); None cleans every file matching ``pattern``.
     """
     files = sorted(input_dir.glob(pattern))
     groups = group_files_by_ticker(files)
+    if tickers is not None:
+        # Subset run (the Market Data Pipeline inventory step): only the listed
+        # base tickers, each with its _dlist files, exactly as a full run would.
+        missing = sorted(tickers - groups.keys())
+        if missing:
+            logger.warning("%d listed ticker(s) have no raw file: %s", len(missing), missing)
+        groups = {t: b for t, b in groups.items() if t in tickers}
+        files = [p for b in groups.values() for p in b["live"] + b["dlist"]]
     n_with_dlist = sum(1 for b in groups.values() if b["dlist"])
     logger.info(
         "Cleaning %d file(s) from %s -> %s (%d ticker(s), %d with a _dlist file)",
@@ -875,14 +904,23 @@ def main(argv: list[str] | None = None) -> int:
                          help="Relative tolerance for accepting vendor adjClose on split/dividend days")
     parser.add_argument("--merge-tolerance", type=float, default=DEFAULT_MERGE_TOLERANCE,
                          help="Tolerance for treating same-date rows from different source files as agreeing")
+    parser.add_argument("--tickers", type=Path, default=None,
+                         help="Clean only the tickers in this Tickers_*.csv (column 'ticker'); default: all")
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=args.log_level, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
+    try:
+        tickers = load_ticker_filter(args.tickers) if args.tickers else None
+    except (OSError, ValueError) as exc:
+        logger.error("Could not read ticker filter: %s", exc)
+        return 1
+
     clean_directory(
         args.input, args.output, pattern=args.pattern,
         tolerance=args.tolerance, merge_tolerance=args.merge_tolerance,
+        tickers=tickers,
     )
     return 0
 

@@ -216,7 +216,8 @@ def save_ticker_data(ticker, data, raw_data_dir, is_delisted=False):
         return False
 
 
-def append_ticker_data(ticker, new_data, raw_data_dir, csv_delimiter, parse_date_func):
+def append_ticker_data(ticker, new_data, raw_data_dir, csv_delimiter, parse_date_func,
+                       replace_existing=False):
     """
     Append non-duplicate rows to an existing active ticker CSV.
 
@@ -224,12 +225,19 @@ def append_ticker_data(ticker, new_data, raw_data_dir, csv_delimiter, parse_date
     the expected format (with a leading symbol column), the file is rewritten
     in full via save_ticker_data.
 
+    With replace_existing, a downloaded row whose date is already stored but
+    whose values differ replaces the stored row (the file is rewritten in
+    place, original row order kept); this is how a refetch turns a
+    preliminary bar into its final value. Without it, stored dates are never
+    touched.
+
     Args:
         ticker (str): Ticker symbol.
         new_data (str): Newly-downloaded Tiingo CSV text.
         raw_data_dir (Path): Output directory.
         csv_delimiter (str): Delimiter used in stored CSV files.
         parse_date_func (callable): Date parser supplied by the caller.
+        replace_existing (bool): Overwrite stored rows that the download revises.
 
     Returns:
         bool: True on success, False on failure.
@@ -256,6 +264,15 @@ def append_ticker_data(ticker, new_data, raw_data_dir, csv_delimiter, parse_date
         expected_new_header = "symbol," + new_header
 
         if existing_header.strip() != expected_new_header.strip():
+            if replace_existing:
+                # new_data is only the refetch window here: save_ticker_data
+                # would replace the whole history with a few days.
+                logger.error(
+                    "%s: Header mismatch on refetch - stored %r vs downloaded %r; "
+                    "file left untouched (run a full download for this ticker)",
+                    ticker, existing_header, expected_new_header,
+                )
+                return False
             logger.warning(
                 "%s: Header mismatch - existing file may be in old format. "
                 "Performing full rewrite with symbol column.", ticker
@@ -271,7 +288,7 @@ def append_ticker_data(ticker, new_data, raw_data_dir, csv_delimiter, parse_date
         if date_col_idx is None:
             date_col_idx = 1
 
-        existing_dates = set()
+        existing_dates = {}  # date key -> stored line
         for line in existing_lines[1:]:
             if not line.strip():
                 continue
@@ -280,7 +297,7 @@ def append_ticker_data(ticker, new_data, raw_data_dir, csv_delimiter, parse_date
                 continue
             dt = parse_date_func(row[date_col_idx].strip())
             if dt is not None:
-                existing_dates.add(dt.strftime("%Y-%m-%d"))
+                existing_dates[dt.strftime("%Y-%m-%d")] = line.rstrip("\r")
 
         new_header_cols = next(csv.reader([new_header], delimiter=csv_delimiter))
         new_date_col_idx = None
@@ -291,24 +308,35 @@ def append_ticker_data(ticker, new_data, raw_data_dir, csv_delimiter, parse_date
         if new_date_col_idx is None:
             new_date_col_idx = 0
 
-        added_count = 0
-        with open(filepath, "a", encoding="utf-8", newline="") as f:
-            for line in new_lines[1:]:
-                if not line.strip():
-                    continue
-                row = next(csv.reader([line], delimiter=csv_delimiter))
-                if len(row) <= new_date_col_idx:
-                    continue
-                dt = parse_date_func(row[new_date_col_idx].strip())
-                if dt is None:
-                    continue
-                key = dt.strftime("%Y-%m-%d")
-                if key not in existing_dates:
-                    f.write(ticker + "," + line + "\n")
-                    added_count += 1
+        downloaded = {}  # date key -> line as it would be stored
+        for line in new_lines[1:]:
+            if not line.strip():
+                continue
+            row = next(csv.reader([line], delimiter=csv_delimiter))
+            if len(row) <= new_date_col_idx:
+                continue
+            dt = parse_date_func(row[new_date_col_idx].strip())
+            if dt is None:
+                continue
+            downloaded[dt.strftime("%Y-%m-%d")] = ticker + "," + line.rstrip("\r")
 
-        if added_count > 0:
-            logger.debug("%s: Added %d new rows", ticker, added_count)
+        added = [line for key, line in downloaded.items() if key not in existing_dates]
+        revised = {
+            existing_dates[key]: line
+            for key, line in downloaded.items()
+            if key in existing_dates and existing_dates[key] != line
+        }
+
+        if replace_existing and revised:
+            kept = [revised.get(line.rstrip("\r"), line) for line in existing_lines]
+            filepath.write_text("\n".join(kept + added) + "\n", encoding="utf-8", newline="")
+            logger.info("%s: Replaced %d revised row(s), added %d", ticker, len(revised), len(added))
+            return True
+
+        if added:
+            with open(filepath, "a", encoding="utf-8", newline="") as f:
+                f.writelines(line + "\n" for line in added)
+            logger.debug("%s: Added %d new rows", ticker, len(added))
 
         return True
 
@@ -456,13 +484,18 @@ def process_single_ticker(idx, ticker_row, config, rate_limiter, stats_lock, sta
                         logger.debug("%s: No price data returned after fallback full download", ticker)
                     return
 
-                if latest_date >= today:
+                refetch_days = config.get("refetch_days", 0)
+                if latest_date >= today and refetch_days <= 0:
                     with stats_lock:
                         stats["skipped"] += 1
                     logger.debug("%s: Already up-to-date (latest: %s)", ticker, latest_date)
                     return
 
-                next_date = (dt + timedelta(days=1)).strftime("%Y-%m-%d")
+                # refetch_days > 0 re-requests the last N calendar days as well,
+                # so a bar stored preliminary by an earlier same-day run is
+                # replaced by Tiingo's final value (append_ticker_data replace mode).
+                start_dt = dt - timedelta(days=refetch_days) if refetch_days > 0 else dt + timedelta(days=1)
+                next_date = start_dt.strftime("%Y-%m-%d")
                 rate_limiter.acquire()
                 data = download_ticker_data(
                     ticker, config["api_key"], config["base_url"],
@@ -479,6 +512,7 @@ def process_single_ticker(idx, ticker_row, config, rate_limiter, stats_lock, sta
                         if append_ticker_data(
                             ticker, data, config["raw_data_dir"],
                             config["csv_delimiter"], config["parse_date_func"],
+                            replace_existing=refetch_days > 0,
                         ):
                             with stats_lock:
                                 stats["successful"] += 1

@@ -20,7 +20,7 @@ workbook_path = '{workbook}'
 workbook_sheet = "Inventory"
 symbol_column = "Symbol"
 mapped_symbol_column = "Mapped Symbol"
-exclude = ["Excl  Me"]
+exclude = ["Excl  Me", "zex"]
 """
 
 
@@ -45,6 +45,16 @@ def ddc_project(tmp_path: Path) -> Path:
     )  # on the exclusion list, whitespace-insensitive
     sheet.append(["MES CME", None, "Own"])  # broker descriptor, not requestable
     sheet.append(["SPY", None, "Own"])  # also a DDC source
+
+    port = book.create_sheet("Portfolio")
+    port.append(["Symbol", "Portfolio%"])
+    port.append(["aaa Jan15'27 10 CALL", 0.1])  # leg -> Inventory spelling -> AAAX
+    port.append(["NEWCO", 0.1])  # held, no Inventory row yet -> itself
+    port.append(["XYZ Mar19'27 5 PUT", 0.1])  # leg of a non-Inventory underlying
+    port.append(["FOO LSE", 0.1])  # foreign listing, no Inventory row -> skipped
+    port.append(["excl me", 0.1])  # on the exclusion list
+    port.append(["ZEX Jan15'27 1 CALL", 0.1])  # leg of an excluded underlying
+    port.append([None, None])
     workbook = tmp_path / "book.xlsx"
     book.save(workbook)
 
@@ -59,8 +69,39 @@ def test_collect_symbols_resolves_filters_and_adds_sources(ddc_project: Path) ->
         "AAAX",
         "BBB",
         "IWM",
+        "NEWCO",
         "SPY",
+        "XYZ",
     ]
+
+
+def test_collect_symbols_missing_portfolio_sheet_raises(ddc_project: Path) -> None:
+    workbook = ddc_project / "book.xlsx"
+    book = openpyxl.load_workbook(workbook)
+    del book["Portfolio"]
+    book.save(workbook)
+    with pytest.raises(ValueError, match="Portfolio"):
+        inventory_tickers.collect_symbols(ddc_project)
+
+
+@pytest.mark.parametrize(
+    ("cell", "expected"),
+    [
+        ("LIT LSE", "LTHM"),  # whole cell is an Inventory spelling
+        ("lit lse", "LTHM"),  # case-insensitive
+        ("AAA Jan15'27 1 CALL", "AAAX"),  # leg resolved via Inventory
+        ("CCXI WAR Dec'30 11.5 USD CALL", "CCXI"),  # warrant leg, bare underlying
+        ("MSFT", "MSFT"),  # single token
+        ("KXREACTOR Dec31'26 Grants License CALL (KXREACTOR)", None),
+        ("GRX WSE", None),  # foreign, no Inventory row
+    ],
+)
+def test_resolve_portfolio_symbol(cell: str, expected: str | None) -> None:
+    lookup = {"lit lse": "LTHM", "aaa": "AAAX"}
+    assert (
+        inventory_tickers.resolve_portfolio_symbol(cell, lookup, str.casefold)
+        == expected
+    )
 
 
 def test_write_ticker_file_uses_tickers_to_update_layout(tmp_path: Path) -> None:

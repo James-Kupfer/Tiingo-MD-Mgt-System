@@ -16,6 +16,9 @@ rem    DownloadMarketData.bat              -- incremental data download (default
 rem    DownloadMarketData.bat full         -- full overwrite data download
 rem    DownloadMarketData.bat incremental  -- incremental data download
 rem    DownloadMarketData.bat tickers      -- update ticker list only, no download
+rem    DownloadMarketData.bat incremental --refetch-days N
+rem                                        -- also re-request the last N days and
+rem                                           replace revised (preliminary) rows
 rem
 rem  All settings are configured in src\config.py.
 rem ---------------------------------------------------------------------------
@@ -33,12 +36,14 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
-'
+
 rem ------------------------------------------------------------------
 rem  Parse argument
 rem ------------------------------------------------------------------
 set MODE=incremental
 set TICKERSONLY=0
+set REFETCH=
+if /i "%~2"=="--refetch-days" set "REFETCH=--refetch-days %~3"
 
 if /i "%~1"=="full"        set MODE=full
 if /i "%~1"=="incremental" set MODE=incremental
@@ -109,7 +114,7 @@ echo.
 echo ============================================================
 echo  STEP 3: Downloading market data (mode: %MODE%)...
 echo ============================================================
-python "%~dp0src\tiingo_data_downloader.py" %MODE%
+python "%~dp0src\tiingo_data_downloader.py" %MODE% %REFETCH%
 set STEP3EXIT=%errorlevel%
 if %STEP3EXIT% neq 0 (
     echo ERROR: Market data download failed ^(exit code %STEP3EXIT%^).

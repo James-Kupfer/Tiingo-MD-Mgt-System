@@ -140,6 +140,14 @@ For each active ticker:
   requested.
 - If the file is already current, the ticker is skipped.
 
+With `--refetch-days N` (e.g. `Download_MarketData.bat incremental
+--refetch-days 5`, or the same flag on `tiingo_data_downloader.py`), the last
+N calendar days are re-requested as well, even for a current ticker, and any
+stored row whose values Tiingo has since revised is replaced in place (the file
+is rewritten only when something changed). This is how the 18:00 run replaces a
+16:20 preliminary bar with its final value. Without the flag, stored rows are
+never touched.
+
 ### Full mode
 
 ```cmd
@@ -159,34 +167,34 @@ Refreshes and filters the ticker universe without downloading market data.
 
 ### Inventory update
 
-```cmd
-C:\Documents\Investments\Systems\run_inventory_update.bat
-```
+Orchestrated by `C:\Documents\Investments\Systems\Market Data Pipeline\
+update_market_data.bat` (`inventory` at 16:20, `full` at 18:00; see that
+folder's README). The pieces that live here:
 
-A partial update for the symbols on the Investment Portfolio workbook's
-Inventory sheet (plus the DDC source symbols SPY/IWM/QQQ). The ticker list is
-not refreshed and the symbols are assumed valid. The batch file runs, in order:
-
-1. `src\inventory_tickers.py` - writes `Tickers_Inventory.csv`. The workbook
-   path, sheet, columns, exclusions and sources are read from the DDC project's
-   `config.toml` (`DDC_DIR` in `src\config.py`) and parsed by its `workbook.py`,
-   so Inventory has one definition. A Mapped Symbol overrides Symbol; symbols
-   that cannot go into a Tiingo URL (e.g. `MES CME`) are logged and skipped.
-   An unreadable workbook (mid-save, held by Excel) is retried
-   `INVENTORY_READ_ATTEMPTS` times, `INVENTORY_READ_RETRY_SECONDS` apart.
-2. `src\tiingo_data_downloader.py incremental --tickers Tickers_Inventory.csv`
-   - existing raw files are appended to; symbols with no raw file get full
-   history. Symbols Tiingo does not carry return 404 and are counted as
-   skipped, not failed.
-3. `Clean_And_Convert.bat` and DDC's `run_ddc.bat` (full-universe steps,
-   roughly 30 minutes).
+1. `src\inventory_tickers.py` - writes `Tickers_Inventory.csv`: the Inventory
+   sheet's symbols, the Portfolio sheet's underlyings, and the DDC source
+   symbols. The workbook path, Inventory sheet/columns, exclusions and sources
+   are read from the DDC project's `config.toml` (`DDC_DIR` in `src\config.py`)
+   and Inventory is parsed by its `workbook.py`, so Inventory has one
+   definition. A Mapped Symbol overrides Symbol. Each Portfolio `Symbol`
+   (`PORTFOLIO_SHEET`/`PORTFOLIO_SYMBOL_COLUMN`) resolves as: the whole cell as
+   an Inventory spelling; else, for an option/warrant leg (last token in
+   `DERIVATIVE_SUFFIXES`), its first token via Inventory or as a bare ticker;
+   else a single-token cell as itself; anything else (a foreign listing with no
+   Inventory row) is logged and skipped. Symbols that cannot go into a Tiingo
+   URL (e.g. `MES CME`) are logged and skipped. An unreadable workbook
+   (mid-save, held by Excel) is retried `INVENTORY_READ_ATTEMPTS` times,
+   `INVENTORY_READ_RETRY_SECONDS` apart.
+2. `src\tiingo_data_downloader.py incremental --tickers Tickers_Inventory.csv
+   --refetch-days 5` - existing raw files are updated; symbols with no raw file
+   get full history. Symbols Tiingo does not carry return 404 and are counted
+   as skipped, not failed.
+3. `src\clean_prices.py --tickers Tickers_Inventory.csv --output
+   ..\Clean_Inventory` - cleans only the listed tickers (each with its `_dlist`
+   files), exactly as the full clean would.
 
 `Tickers_Inventory.csv` is separate from `Tickers_to_Update.csv` so a full run's
-file is never overwritten. Do not run this at the same time as
-`Run_Update_Pipeline.bat`; both write the same Raw, Clean and Price stores.
-
-Task Scheduler imports for the daily 16:20 inventory run and the daily 18:00
-full run are in `C:\Documents\Investments\Systems\Scheduled Tasks\`.
+file is never overwritten.
 
 ## Output files
 
@@ -194,7 +202,7 @@ full run are in `C:\Documents\Investments\Systems\Scheduled Tasks\`.
 
 - `Tickers_to_Update.csv` - all valid filtered tickers, including delisted.
 - `active_list.csv` - tickers considered currently active.
-- `Tickers_Inventory.csv` - Inventory symbols only (inventory update).
+- `Tickers_Inventory.csv` - Inventory + Portfolio symbols (inventory update).
 
 ### Price history
 

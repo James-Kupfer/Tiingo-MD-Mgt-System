@@ -183,6 +183,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--tickers", type=Path, default=TICKERS_TO_UPDATE_FILE,
         help="Ticker CSV to download (default: Tickers_to_Update.csv)",
     )
+    parser.add_argument(
+        "--refetch-days", type=int, default=0, metavar="N",
+        help="Incremental mode: also re-request the last N calendar days and "
+             "replace stored rows Tiingo has revised (default 0: new dates only)",
+    )
     return parser.parse_args(argv)
 
 
@@ -231,6 +236,7 @@ def main() -> int:
             "retry_delay": RETRY_DELAY,
             "max_requests_per_hour": MAX_REQUESTS_PER_HOUR,
             "today": datetime.now().strftime("%Y-%m-%d"),
+            "refetch_days": max(args.refetch_days, 0),
             "cutoff_date": cutoff_date,
             "show_progress": SHOW_PROGRESS,
             "display_interval": DISPLAY_INTERVAL,

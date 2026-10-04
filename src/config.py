@@ -34,6 +34,12 @@ DDC_DIR = Path(r"C:\Documents\Investments\Systems\Correlation Analysis")
 # which surfaces as a read error. Retry before failing the run.
 INVENTORY_READ_ATTEMPTS = 5
 INVENTORY_READ_RETRY_SECONDS = 60
+# The same workbook's Portfolio sheet: each position's symbol is resolved to the
+# ticker to download (an option/warrant leg to its underlying) and added to the
+# inventory set, so every held position is priced even before it has an Inventory row.
+PORTFOLIO_SHEET = "Portfolio"
+PORTFOLIO_SYMBOL_COLUMN = "Symbol"
+DERIVATIVE_SUFFIXES = {"CALL", "PUT"}  # Last token of an option/warrant leg's Portfolio symbol
 
 TIINGO_BASE_URL = "https://api.tiingo.com/tiingo/daily"
 TIINGO_TICKER_LIST_URL = "https://apimedia.tiingo.com/docs/tiingo/daily/supported_tickers.zip"

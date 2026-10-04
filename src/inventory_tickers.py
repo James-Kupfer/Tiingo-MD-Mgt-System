@@ -2,8 +2,9 @@
 inventory_tickers.py
 --------------------
 Writes Tickers_Inventory.csv: the symbols on the Investment Portfolio
-workbook's Inventory sheet, plus the DDC source symbols, in the layout of
-Tickers_to_Update.csv so tiingo_data_downloader.py can consume it unchanged.
+workbook's Inventory sheet, the underlyings of its Portfolio sheet, and the
+DDC source symbols, in the layout of Tickers_to_Update.csv so
+tiingo_data_downloader.py can consume it unchanged.
 
 The workbook path, sheet, columns, exclusions and sources come from the DDC
 project's config.toml, and rows are parsed by its workbook.py, so "which
@@ -19,15 +20,22 @@ import re
 import sys
 import time
 import tomllib
+import zipfile
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
+import openpyxl
+
 from config import (
     DDC_DIR,
+    DERIVATIVE_SUFFIXES,
     INVENTORY_READ_ATTEMPTS,
     INVENTORY_READ_RETRY_SECONDS,
     INVENTORY_TICKERS_FILE,
     LOG_FILE,
+    PORTFOLIO_SHEET,
+    PORTFOLIO_SYMBOL_COLUMN,
 )
 
 logger = logging.getLogger("inventory_tickers")
@@ -66,11 +74,61 @@ def load_ddc_workbook_module(ddc_dir: Path) -> ModuleType:
     return module
 
 
+def read_portfolio_symbols(workbook: Path, sheet: str, column: str) -> list[str]:
+    """Return the non-blank cells of ``column`` on ``sheet``, in sheet order.
+
+    Raises:
+        ValueError: The workbook is unreadable (including held or mid-save),
+            or the sheet or column is missing.
+    """
+    try:
+        book = openpyxl.load_workbook(workbook, read_only=True, data_only=True)
+    except (OSError, zipfile.BadZipFile, KeyError) as exc:
+        raise ValueError(f"Could not read {workbook}: {exc}") from exc
+    try:
+        if sheet not in book.sheetnames:
+            raise ValueError(f"Sheet '{sheet}' not found in {workbook.name}")
+        rows = book[sheet].iter_rows(values_only=True)
+        header = next(rows, ())
+        if column not in header:
+            raise ValueError(f"Column '{column}' not found on sheet '{sheet}'")
+        idx = header.index(column)
+        return [
+            str(r[idx]).strip()
+            for r in rows
+            if idx < len(r) and r[idx] is not None and str(r[idx]).strip()
+        ]
+    finally:
+        book.close()
+
+
+def resolve_portfolio_symbol(
+    cell: str, lookup: dict[str, str], fold: Callable[[str], str]
+) -> str | None:
+    """Map one Portfolio Symbol cell to the symbol to download.
+
+    Tried in order: the whole cell as an Inventory spelling (so a foreign
+    listing picks up its Mapped Symbol); for a derivative leg (last token in
+    DERIVATIVE_SUFFIXES) its underlying, the first token, via Inventory or as
+    a bare ticker; a single-token cell as itself. Returns None when nothing
+    resolves, e.g. a multi-token listing with no Inventory row.
+    """
+    tokens = cell.split()
+    if fold(cell) in lookup:
+        return lookup[fold(cell)]
+    if len(tokens) > 1 and tokens[-1].upper() in DERIVATIVE_SUFFIXES:
+        return lookup.get(fold(tokens[0]), tokens[0].upper())
+    if len(tokens) == 1:
+        return cell.upper()
+    return None
+
+
 def collect_symbols(ddc_dir: Path) -> list[str]:
     """Return the sorted, de-duplicated symbols to download.
 
     Inventory rows resolve through the Mapped Symbol override, drop the DDC
-    exclusion list, and are joined by the DDC source symbols (the down-day
+    exclusion list, and are joined by the Portfolio sheet's underlyings (see
+    resolve_portfolio_symbol) and the DDC source symbols (the down-day
     sample, which DDC cannot run without). Symbols that cannot be requested
     from Tiingo are logged and skipped.
 
@@ -96,10 +154,28 @@ def collect_symbols(ddc_dir: Path) -> list[str]:
 
     excluded = {fold(s) for s in settings["exclude"]}
     symbols = {s.upper() for s in settings["sources"]}
+    lookup: dict[str, str] = {}
     for row in rows:
         if any(fold(spelling) in excluded for spelling in row.spellings):
             continue
         symbols.add(row.effective)
+        lookup.update({fold(spelling): row.effective for spelling in row.spellings})
+
+    workbook = ddc_dir / settings["workbook_path"]
+    for cell in read_portfolio_symbols(
+        workbook, PORTFOLIO_SHEET, PORTFOLIO_SYMBOL_COLUMN
+    ):
+        tokens = cell.split()
+        is_leg = len(tokens) > 1 and tokens[-1].upper() in DERIVATIVE_SUFFIXES
+        if fold(cell) in excluded or (is_leg and fold(tokens[0]) in excluded):
+            continue
+        resolved = resolve_portfolio_symbol(cell, lookup, fold)
+        if resolved is None:
+            logger.warning(
+                "Portfolio %r: no Inventory row to resolve it; skipped", cell
+            )
+            continue
+        symbols.add(resolved)
 
     unusable = sorted(s for s in symbols if not URL_SAFE_TICKER.fullmatch(s))
     for symbol in unusable:
