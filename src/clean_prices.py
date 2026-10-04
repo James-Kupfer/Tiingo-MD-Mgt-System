@@ -245,10 +245,9 @@ def clean_symbol_rows(rows: list[dict], tolerance: float = DEFAULT_TOLERANCE) ->
         rows: CSV rows for a single symbol, each a dict with REQUIRED_COLUMNS
             keys (string values, as read by csv.DictReader). Must be sorted
             ascending by date before calling.
-        tolerance: Relative disagreement between Tiingo's adjClose return and
-            the split/dividend-derived return above which a corporate-action
-            day is reported as a discrepancy. The derived return is always the
-            one used (the vendor's only when the derived one cannot be computed).
+        tolerance: Relative tolerance for accepting Tiingo's adjClose return
+            on a corporate-action day before falling back to the
+            self-computed expected return.
 
     Returns:
         (output_rows, discrepancies) where output_rows has all original
@@ -293,28 +292,27 @@ def clean_symbol_rows(rows: list[dict], tolerance: float = DEFAULT_TOLERANCE) ->
 
             if expected_ratio is None:
                 chosen_ratio = vendor_ratio if vendor_ratio is not None else 1.0
-            else:
-                # Always the split/dividend-derived ratio. Accepting the vendor's
-                # when within `tolerance` kept a dividend under that fraction of
-                # the price out of the adjusted series whenever the stored
-                # adjClose had not been re-adjusted (rows appended incrementally).
+            elif vendor_ratio is None:
                 chosen_ratio = expected_ratio
-                if vendor_ratio is not None:
-                    delta = abs(vendor_ratio - expected_ratio)
-                    rel_delta = delta / expected_ratio if expected_ratio else delta
-                    if rel_delta > tolerance:
-                        discrepancies.append({
-                            "symbol": cur["symbol"],
-                            "date": nxt["date"],
-                            "vendor_ratio": vendor_ratio,
-                            "expected_ratio": expected_ratio,
-                            "rel_delta": rel_delta,
-                        })
-                        logger.warning(
-                            "%s %s: adjClose disagrees with split/div-derived adjustment "
-                            "by %.2f%% (vendor=%.6f expected=%.6f); using expected.",
-                            cur["symbol"], nxt["date"], rel_delta * 100, vendor_ratio, expected_ratio,
-                        )
+            else:
+                delta = abs(vendor_ratio - expected_ratio)
+                rel_delta = delta / expected_ratio if expected_ratio else delta
+                if rel_delta <= tolerance:
+                    chosen_ratio = vendor_ratio
+                else:
+                    chosen_ratio = expected_ratio
+                    discrepancies.append({
+                        "symbol": cur["symbol"],
+                        "date": nxt["date"],
+                        "vendor_ratio": vendor_ratio,
+                        "expected_ratio": expected_ratio,
+                        "rel_delta": rel_delta,
+                    })
+                    logger.warning(
+                        "%s %s: adjClose disagrees with split/div-derived adjustment "
+                        "by %.2f%% (vendor=%.6f expected=%.6f); using expected.",
+                        cur["symbol"], nxt["date"], rel_delta * 100, vendor_ratio, expected_ratio,
+                    )
 
         syn_close[t] = syn_close[t + 1] / chosen_ratio if chosen_ratio else syn_close[t + 1]
 

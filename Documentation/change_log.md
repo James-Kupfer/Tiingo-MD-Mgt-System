@@ -1,19 +1,5 @@
 # Change Log
 
-## 2026-10-04 - Cleaner always applies divCash and splitFactor
-
-**Type**: fix
-**Files**: src/clean_prices.py, tests/test_clean_prices.py
-
-On a split or dividend day `clean_symbol_rows` now always uses the
-divCash/splitFactor-derived return; the vendor's adjClose return is used only
-when that cannot be computed. Previously the vendor's was kept when within 1% of
-the derived one, which dropped every dividend under 1% of price when the stored
-adjClose had not been re-adjusted (SPY: adjClose == close across four ex-dates).
-`tolerance` now only decides whether a disagreement is reported. Takes effect
-when Clean/Clean_Inventory are next built; `Price` (append-only) keeps the
-adjClose values it already holds until it is rebuilt from Clean.
-
 ## 2026-10-04 - Hedge-signal symbols always downloaded
 
 **Type**: feature
@@ -23,7 +9,7 @@ adjClose values it already holds until it is rebuilt from Clean.
 `Tickers_Inventory.csv`: the Investments hedge signal's trigger symbols and
 sleeve now price off this store (Clean_Inventory). RSP was not in it before.
 
-Found here, fixed in the entry above: `clean_prices.clean_symbol_rows` keeps the
+Found, not fixed (needs a decision): `clean_prices.clean_symbol_rows` keeps the
 vendor's adjClose return on a dividend day when it is within `DEFAULT_TOLERANCE`
 (1%) of the dividend-derived one. Rows appended incrementally carry an
 unadjusted vendor adjClose, so every dividend under 1% of price since the raw

@@ -64,28 +64,3 @@ def test_main_returns_1_on_missing_ticker_file(raw: Path, tmp_path: Path) -> Non
         ]
     )
     assert rc == 1
-
-
-def _row(date: str, close: float, adj: float, div: float = 0.0, split: float = 1.0) -> dict:
-    return {
-        "symbol": "AAA", "date": date, "close": str(close), "high": str(close),
-        "low": str(close), "open": str(close), "volume": "100", "adjClose": str(adj),
-        "adjHigh": str(adj), "adjLow": str(adj), "adjOpen": str(adj), "adjVolume": "100",
-        "divCash": str(div), "splitFactor": str(split),
-    }
-
-
-def test_small_dividend_is_applied_even_when_vendor_adjclose_ignores_it() -> None:
-    # $0.40 on a $100 stock (0.4%, inside the 1% tolerance); the stored adjClose
-    # equals close, i.e. was never re-adjusted for the dividend.
-    rows = [_row("2026-10-01", 100, 100), _row("2026-10-02", 100, 100, div=0.4)]
-    out, discrepancies = clean_prices.clean_symbol_rows(rows)
-    assert float(out[1]["adjClose"]) == pytest.approx(100.0)
-    assert float(out[0]["adjClose"]) == pytest.approx(100.0 * 99.6 / 100.0)
-    assert discrepancies == []
-
-
-def test_split_is_applied_to_earlier_bars() -> None:
-    rows = [_row("2026-10-01", 100, 50), _row("2026-10-02", 50, 50, split=2.0)]
-    out, _ = clean_prices.clean_symbol_rows(rows)
-    assert float(out[0]["adjClose"]) == pytest.approx(50.0)
