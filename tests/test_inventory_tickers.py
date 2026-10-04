@@ -65,14 +65,9 @@ def ddc_project(tmp_path: Path) -> Path:
 
 
 def test_collect_symbols_resolves_filters_and_adds_sources(ddc_project: Path) -> None:
-    assert inventory_tickers.collect_symbols(ddc_project) == [
-        "AAAX",
-        "BBB",
-        "IWM",
-        "NEWCO",
-        "SPY",
-        "XYZ",
-    ]
+    expected = {"AAAX", "BBB", "IWM", "NEWCO", "SPY", "XYZ"}
+    expected |= inventory_tickers.EXTRA_INVENTORY_SYMBOLS  # hedge-signal symbols
+    assert inventory_tickers.collect_symbols(ddc_project) == sorted(expected)
 
 
 def test_collect_symbols_missing_portfolio_sheet_raises(ddc_project: Path) -> None:

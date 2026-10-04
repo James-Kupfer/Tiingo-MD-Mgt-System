@@ -40,6 +40,10 @@ INVENTORY_READ_RETRY_SECONDS = 60
 PORTFOLIO_SHEET = "Portfolio"
 PORTFOLIO_SYMBOL_COLUMN = "Symbol"
 DERIVATIVE_SUFFIXES = {"CALL", "PUT"}  # Last token of an option/warrant leg's Portfolio symbol
+# Always added to the inventory set: the Investments hedge signal's trigger
+# symbols and its sleeve (yahoo_md/hedge_signal_config.py TRIGGER_SYMBOLS /
+# SLEEVE_SYMBOL), which price off this store. Keep the two lists in step.
+EXTRA_INVENTORY_SYMBOLS = {"RSP", "SPY", "QQQ", "TAIL"}
 
 TIINGO_BASE_URL = "https://api.tiingo.com/tiingo/daily"
 TIINGO_TICKER_LIST_URL = "https://apimedia.tiingo.com/docs/tiingo/daily/supported_tickers.zip"

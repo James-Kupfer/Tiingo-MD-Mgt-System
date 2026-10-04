@@ -1,5 +1,23 @@
 # Change Log
 
+## 2026-10-04 - Hedge-signal symbols always downloaded
+
+**Type**: feature
+**Files**: src/config.py, src/inventory_tickers.py, tests/test_inventory_tickers.py
+
+`EXTRA_INVENTORY_SYMBOLS = {"RSP", "SPY", "QQQ", "TAIL"}` is unioned into
+`Tickers_Inventory.csv`: the Investments hedge signal's trigger symbols and
+sleeve now price off this store (Clean_Inventory). RSP was not in it before.
+
+Found, not fixed (needs a decision): `clean_prices.clean_symbol_rows` keeps the
+vendor's adjClose return on a dividend day when it is within `DEFAULT_TOLERANCE`
+(1%) of the dividend-derived one. Rows appended incrementally carry an
+unadjusted vendor adjClose, so every dividend under 1% of price since the raw
+files went incremental is silently dropped from the synthetic adjClose (SPY:
+adjClose == close across four ex-dates, 1.08% off over a year). Affects DDC
+and everything reading Price/Price_Inventory adjClose. The hedge signal avoids
+it by adjusting from raw columns itself.
+
 ## 2026-10-04 - Portfolio symbols, ticker-subset clean, refetch of revised bars
 
 **Type**: feature

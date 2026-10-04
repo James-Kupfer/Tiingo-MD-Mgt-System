@@ -30,6 +30,7 @@ import openpyxl
 from config import (
     DDC_DIR,
     DERIVATIVE_SUFFIXES,
+    EXTRA_INVENTORY_SYMBOLS,
     INVENTORY_READ_ATTEMPTS,
     INVENTORY_READ_RETRY_SECONDS,
     INVENTORY_TICKERS_FILE,
@@ -128,8 +129,8 @@ def collect_symbols(ddc_dir: Path) -> list[str]:
 
     Inventory rows resolve through the Mapped Symbol override, drop the DDC
     exclusion list, and are joined by the Portfolio sheet's underlyings (see
-    resolve_portfolio_symbol) and the DDC source symbols (the down-day
-    sample, which DDC cannot run without). Symbols that cannot be requested
+    resolve_portfolio_symbol), the DDC source symbols (the down-day sample,
+    which DDC cannot run without) and EXTRA_INVENTORY_SYMBOLS (hedge signal). Symbols that cannot be requested
     from Tiingo are logged and skipped.
 
     Args:
@@ -153,7 +154,7 @@ def collect_symbols(ddc_dir: Path) -> list[str]:
         return parser.normalize_symbol(text).casefold()
 
     excluded = {fold(s) for s in settings["exclude"]}
-    symbols = {s.upper() for s in settings["sources"]}
+    symbols = {s.upper() for s in settings["sources"]} | EXTRA_INVENTORY_SYMBOLS
     lookup: dict[str, str] = {}
     for row in rows:
         if any(fold(spelling) in excluded for spelling in row.spellings):
