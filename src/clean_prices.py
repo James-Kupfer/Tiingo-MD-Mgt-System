@@ -38,6 +38,7 @@ from pathlib import Path
 
 try:
     from config import RAW_DATA_DIR, CLEAN_DATA_DIR, MERGE_VARIANCE_THRESHOLD
+    from log_utils import setup_logging
 except ImportError:
     print("ERROR: config.py not found in the src/ directory.")
     sys.exit(1)
@@ -621,12 +622,20 @@ def clean_directory(
                 with path.open(newline="", encoding="utf-8") as f:
                     rows = list(csv.DictReader(f))
             except OSError as exc:
-                logger.warning("Skipping %s: could not read (%s)", path.name, exc)
+                logger.warning("Skipping %s: could not read (%s)", path, exc, exc_info=True)
                 continue
             if rows:
                 file_rows[path] = rows
+            else:
+                logger.warning("%s: %s has no data rows, ignoring", ticker, path)
         live_paths = [p for p in live_paths if p in file_rows]
         dlist_paths = [p for p in dlist_paths if p in file_rows]
+        logger.debug(
+            "%s: %d live file(s) %s, %d dlist file(s) %s, %d row(s) read",
+            ticker, len(live_paths), [p.name for p in live_paths],
+            len(dlist_paths), [p.name for p in dlist_paths],
+            sum(len(r) for r in file_rows.values()),
+        )
 
         # --- live series: TICKER.csv / symbol=TICKER ---
         live_dates: set[str] = set()
@@ -636,6 +645,7 @@ def clean_directory(
                 all_excluded.append(_excluded_record(file_rows, comp, ticker))
             live_dates = {r["date"] for p in canonical for r in file_rows[p]}
 
+            logger.debug("%s: cleaning live series from %s", ticker, [p.name for p in canonical])
             try:
                 discrepancies, conflicts, skipped, corrections = _clean_and_write_series(
                     file_rows, canonical, ticker, output_dir, tolerance, merge_tolerance,
@@ -651,7 +661,10 @@ def clean_directory(
                 # float(None) raises TypeError rather than ValueError.
                 # Without this, one malformed row anywhere in a 30k+ file
                 # batch would crash the whole run instead of just this series.
-                logger.error("Failed to clean %s: %s", ticker, exc)
+                logger.error(
+                    "Failed to clean %s from %s: %s: %s",
+                    ticker, [str(p) for p in canonical], type(exc).__name__, exc, exc_info=True,
+                )
                 n_failed += 1
 
         # --- dlist series: TICKER_DLIST.csv / symbol=TICKER_DLIST ---
@@ -688,6 +701,7 @@ def clean_directory(
                 for comp in excluded:
                     all_excluded.append(_excluded_record(file_rows, comp, dlist_symbol))
 
+                logger.debug("%s: cleaning dlist series from %s", dlist_symbol, [p.name for p in canonical])
                 try:
                     discrepancies, conflicts, skipped, corrections = _clean_and_write_series(
                         file_rows, canonical, dlist_symbol, output_dir, tolerance, merge_tolerance,
@@ -698,7 +712,10 @@ def clean_directory(
                     all_corrections.extend(corrections)
                     n_ok += 1
                 except (ValueError, TypeError, OSError) as exc:
-                    logger.error("Failed to clean %s: %s", dlist_symbol, exc)
+                    logger.error(
+                        "Failed to clean %s from %s: %s: %s",
+                        dlist_symbol, [str(p) for p in canonical], type(exc).__name__, exc, exc_info=True,
+                    )
                     n_failed += 1
 
     # Reports go in a subdirectory, NOT output_dir itself: csv_to_pq's
@@ -861,6 +878,11 @@ def _clean_and_write_series(
         raise ValueError("no valid rows remain after row-level validation")
 
     output_rows, discrepancies = clean_symbol_rows(clean_rows, tolerance=tolerance)
+    logger.debug(
+        "%s: %d merged row(s) -> %d valid -> %d written (%d skipped, %d corrected, %d adjClose override(s))",
+        output_symbol, len(merged_rows), len(clean_rows), len(output_rows),
+        len(skipped), len(corrections), len(discrepancies),
+    )
 
     output_path = output_dir / f"{output_symbol}.csv"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -906,10 +928,12 @@ def main(argv: list[str] | None = None) -> int:
                          help="Tolerance for treating same-date rows from different source files as agreeing")
     parser.add_argument("--tickers", type=Path, default=None,
                          help="Clean only the tickers in this Tickers_*.csv (column 'ticker'); default: all")
-    parser.add_argument("--log-level", default="INFO")
+    parser.add_argument("--log-level", default="INFO",
+                         help="Console log level; the log file level comes from config LOG_LEVEL")
     args = parser.parse_args(argv)
 
-    logging.basicConfig(level=args.log_level, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    log_path = setup_logging("clean_prices", console_level=args.log_level)
+    logger.info("Arguments: %s", vars(args))
 
     try:
         tickers = load_ticker_filter(args.tickers) if args.tickers else None
@@ -917,11 +941,19 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("Could not read ticker filter: %s", exc)
         return 1
 
-    clean_directory(
-        args.input, args.output, pattern=args.pattern,
-        tolerance=args.tolerance, merge_tolerance=args.merge_tolerance,
-        tickers=tickers,
-    )
+    try:
+        clean_directory(
+            args.input, args.output, pattern=args.pattern,
+            tolerance=args.tolerance, merge_tolerance=args.merge_tolerance,
+            tickers=tickers,
+        )
+    except Exception:
+        # Anything not handled per-series (e.g. KeyError, ZeroDivisionError,
+        # a locked output dir) used to surface only as a bare traceback on
+        # the console; the log's preceding DEBUG lines name the ticker.
+        logger.critical("clean_prices aborted; see %s", log_path, exc_info=True)
+        return 1
+    logger.info("clean_prices finished; log: %s", log_path)
     return 0
 
 

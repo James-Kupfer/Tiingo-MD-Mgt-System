@@ -73,6 +73,35 @@ preliminary bars.
   underlying is excluded, but a multi-token listing is no longer excluded by
   its first token alone.
 
+## 2026-10-04 - Added run logging to Clean_And_Convert.bat
+
+**Type**: feature
+**Files**: src/log_utils.py, src/run_csv2pq.py, src/clean_prices.py, src/config.py,
+Clean_And_Convert.bat, tests/test_log_utils.py, README.md
+
+Clean_And_Convert.bat produced numerous errors but kept no log: `clean_prices.py`
+used `logging.basicConfig` (console only, no tracebacks) and `csv2pq` output went
+only to the console window.
+
+- `log_utils.py`: `setup_logging(name)` writes `logs\YYYY-MM-DD-HH-MM_{name}.txt`
+  (level from `LOG_LEVEL`) plus the console, and `purge_old_logs` deletes logs
+  older than `LOG_RETENTION_DAYS` (90).
+- `clean_prices.py`: per-ticker DEBUG lines (files, row counts), tracebacks and
+  source file paths on failed series, unreadable-file tracebacks, empty-file
+  warnings, run arguments, and a top-level handler that logs any uncaught
+  exception at CRITICAL and returns exit code 1.
+- `run_csv2pq.py`: runs csv2pq and logs its output line-by-line and its exit
+  code; logs a missing executable or config file instead of a bare shell error.
+  The .bat now calls it instead of csv2pq directly.
+
+Behavior change: an uncaught exception in clean_prices now exits 1 (previously
+an unlogged traceback, also nonzero), so the .bat's existing error branch applies.
+Series-level failures still return 0 and the .bat continues to the convert step;
+unchanged, flagged for a decision.
+
+Rejected: piping csv2pq through PowerShell `Tee-Object` in the .bat - exit-code
+handling and quoting of the spaced config path are fragile, and untestable here.
+
 ## 2026-10-03 - Export the ETF list to Price\ETFs.xlsx
 
 **Type**: feature
