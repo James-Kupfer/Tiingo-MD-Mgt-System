@@ -79,7 +79,8 @@ TEST_TICKER_LIMIT = 0  # Cap tickers processed; 0 = no limit
 # immaterial; above it, the date is logged to _merge_conflicts.csv.
 MERGE_VARIANCE_THRESHOLD = 0.01
 
-LOG_LEVEL = "DEBUG"
+LOG_LEVEL = "DEBUG"  # Minimum severity written to the log file
+LOG_RETENTION_DAYS = 90  # Log files older than this are purged at the start of each logged run
 CONSOLE_LOG_LEVEL = "INFO"
 CSV_DELIMITER = ","
 DISPLAY_INTERVAL = 250
